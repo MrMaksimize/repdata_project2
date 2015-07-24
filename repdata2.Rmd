@@ -5,8 +5,6 @@ output:
     keep_md: yes
 ---
 
-
-# Economic and Public Health Impact of Storm Events
 Consider writing your report as if it were to be read by a government or municipal manager who might be responsible for preparing for severe weather events and will need to prioritize resources for different types of events.
 
 Across the United States, which types of events (as indicated in the EVTYPE variable) are most harmful with respect to population health?
@@ -34,7 +32,9 @@ options(scipen = 1, digits = 1)
 
 
 ## Synopsis
-In this report, I aim to describe the health impact and economic impacts of various event types in the places where they occur.  
+Storms and other severe weather events can cause various problems for communities and municipalities.  These problems tend to include economic issues such as property and crop damage, as well as public health issues, such as fatalities or injuries.  Being prepared for these situations is important and knowing which events are likely to cause the most of a certain type of damage is extremely important for preparation.
+
+Our analysis allows us to identify different storm events and their impact on the economic and health metrics of communities.  Knowing this information will help responders be better prepared for these events.
 
 ## Data Processing 
 
@@ -42,8 +42,7 @@ We first read in the storm data from the raw CSV file included in the zip archiv
 
 ```{r readcsv, cache=TRUE}
 ## Results
-if (!exists("data"))
-    data <- read.csv('data//repdata-data-StormData.csv.bz2')
+data <- read.csv('data//repdata-data-StormData.csv.bz2')
 ```
 
 Now let's look at some of the column headings:
@@ -54,11 +53,9 @@ names(data)
 In order to understand the health and economic impacts of the events, we'll need event information, location information and health and economic impact information.  Let's select only those columns from the dataset.  We will also change the data types of several columns.
 
 ```{r}
-stormData <- data %>%
-    select(
+stormData <- select(data,
         REFNUM,
         BGN_DATE, # Date the event started
-        #COUNTYNAME, # Name of the County
         STATE, # Abbreviation of the state
         EVTYPE, # Event type
         END_DATE, # END date
@@ -81,7 +78,7 @@ unique_events <- nrow(as.data.frame(unique(stormData$EVTYPE)))
 unique_events
 ```
 
-We can see that there are `r unique_events` in the data, while there are only 48 event types in [NATIONAL WEATHER SERVICE - INSTRUCTION 10-1605](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf)  
+We can see that there are `r unique_events` unique events in the data, while there are only 48 event types in [NATIONAL WEATHER SERVICE - INSTRUCTION 10-1605](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf)  
 
 In order to mitigate this, I've created a dataset containing the 48 Event Types.  Let's load that in now, and filter the storm data to include only the events containing one of the 48 official events.
 
@@ -99,19 +96,12 @@ stormData <- semi_join(stormData, evTypes, by="EVTYPE")
 NOA data goes back to 1950, but according to the assignment, most recent years should be considered more complete.  In addition, the [Storm Data DB Info Page](http://www.ncdc.noaa.gov/stormevents/details.jsp?type=eventtype) makes it clear that the full 48 events have only been collected since 1996.  Previously only tornado, or tornado, thunderstorm and hail data were collected. This would significantly skew our results, so we want to make sure to subset our data to include events starting January 1996.  This shouldn't be too bad because we still get a solid 8 years of data to analyze.
 
 ```{r}
-stormData <- filter(stormData, BGN_DATE > mdy("01/01/1996"))
+stormData <- stormData %>%
+    filter(BGN_DATE > mdy("01/01/1996")) %>%
+    mutate(BGN_DATE = year(BGN_DATE), END_DATE = year(END_DATE))
 ```
-
-### Data Processing: Public Health Impact
-At this point, we're going to break our dataset down into two separate datasets.  we have done a good chunk of subsetting and processing the original data, but the next set of operations, if performed on Economic data as well wouldn't make any sense and have the potential of skewing the result.  Let's create a distinct dataset for working with the public health impacts of storm events.
-
-```{r}
-econStormData <- select(stormData, -FATALITIES, -INJURIES)
-```
-
 
 The PROPDMG and PROPDMGEXP as well as CROPDMG and CROPDMGEXP are not comparable numbers, since the number in the PROPDMG column is multiplied by the letter of the PROPDMGEXP Column (same for CROPDMG).  Let's fix that.  In addition, since crop damage and property damage are both economic damages and are represented in dollars, we'll add them together.
-
 
 ```{r}
 # Create function to change the letters to numerical multipliers.
@@ -128,7 +118,7 @@ set_multiplier <- Vectorize(function(x) {
 })
 
 # Multiply the damage by its multiplier.
-econStormData <- econStormData %>%
+stormData <- stormData %>%
     mutate(PROPDMGEXP = set_multiplier(PROPDMGEXP)) %>%
     mutate(CROPDMGEXP = set_multiplier(CROPDMGEXP)) %>%
     mutate(PROPDMG = PROPDMG * PROPDMGEXP) %>%
@@ -136,6 +126,26 @@ econStormData <- econStormData %>%
     mutate(TOTALDMG = CROPDMG + PROPDMG)
 ```
 
+Let's also add together the fatalities injuries to get a total health impact of a storm:
+```{r}
+stormData <- mutate(stormData, TOTALHEALTHDMG = FATALITIES + INJURIES)
+```
 
+# Results
+## Across the United States, which types of events are most harmful with respect to population health?
 
+Since we classify direct injuries and fatalities as harmful to population health, let's see how various events affect these variables:
+
+```{r}
+g <- ggplot(
+    data = stormData, 
+    aes(x = BGN_DATE, y = TOTALDMG)
+) + 
+labs(
+    title = "Injuries and Fatalities By Year Per Event",
+    x = "Year",
+    y = "Injury or Fatality Count"
+) + 
+facet_grid(EVTYPE ~ .)
+```
 

@@ -1,7 +1,5 @@
 # Economic and Public Health Impact of Storm Events
 
-
-# Economic and Public Health Impact of Storm Events
 Consider writing your report as if it were to be read by a government or municipal manager who might be responsible for preparing for severe weather events and will need to prioritize resources for different types of events.
 
 Across the United States, which types of events (as indicated in the EVTYPE variable) are most harmful with respect to population health?
@@ -21,6 +19,7 @@ if(length(new.packages)) install.packages(new.packages)
 library(dplyr)
 library(ggplot2)
 library(knitr)
+library(lubridate)
 
 ## Knitr setup for rounding:
 options(scipen = 1, digits = 1)
@@ -28,7 +27,9 @@ options(scipen = 1, digits = 1)
 
 
 ## Synopsis
-In this report, I aim to describe the health impact and economic impacts of various event types in the places where they occur.  
+Storms and other severe weather events can cause various problems for communities and municipalities.  These problems tend to include economic issues such as property and crop damage, as well as public health issues, such as fatalities or injuries.  Being prepared for these situations is important and knowing which events are likely to cause the most of a certain type of damage is extremely important for preparation.
+
+Our analysis allows us to identify different storm events and their impact on the economic and health metrics of communities.  Knowing this information will help responders be better prepared for these events.
 
 ## Data Processing 
 
@@ -37,58 +38,13 @@ We first read in the storm data from the raw CSV file included in the zip archiv
 
 ```r
 ## Results
-stormData <- read.csv('data//repdata-data-StormData.csv.bz2')
-```
-
-After reading in the data, we check the first few rows.  There are 902297 in the data set, so we take a look at the first few:
-
-
-```r
-head(stormData)
-```
-
-```
-##   STATE__           BGN_DATE BGN_TIME TIME_ZONE COUNTY COUNTYNAME STATE
-## 1       1  4/18/1950 0:00:00     0130       CST     97     MOBILE    AL
-## 2       1  4/18/1950 0:00:00     0145       CST      3    BALDWIN    AL
-## 3       1  2/20/1951 0:00:00     1600       CST     57    FAYETTE    AL
-## 4       1   6/8/1951 0:00:00     0900       CST     89    MADISON    AL
-## 5       1 11/15/1951 0:00:00     1500       CST     43    CULLMAN    AL
-## 6       1 11/15/1951 0:00:00     2000       CST     77 LAUDERDALE    AL
-##    EVTYPE BGN_RANGE BGN_AZI BGN_LOCATI END_DATE END_TIME COUNTY_END
-## 1 TORNADO         0                                               0
-## 2 TORNADO         0                                               0
-## 3 TORNADO         0                                               0
-## 4 TORNADO         0                                               0
-## 5 TORNADO         0                                               0
-## 6 TORNADO         0                                               0
-##   COUNTYENDN END_RANGE END_AZI END_LOCATI LENGTH WIDTH F MAG FATALITIES
-## 1         NA         0                      14.0   100 3   0          0
-## 2         NA         0                       2.0   150 2   0          0
-## 3         NA         0                       0.1   123 2   0          0
-## 4         NA         0                       0.0   100 2   0          0
-## 5         NA         0                       0.0   150 2   0          0
-## 6         NA         0                       1.5   177 2   0          0
-##   INJURIES PROPDMG PROPDMGEXP CROPDMG CROPDMGEXP WFO STATEOFFIC ZONENAMES
-## 1       15      25          K       0                                    
-## 2        0       2          K       0                                    
-## 3        2      25          K       0                                    
-## 4        2       2          K       0                                    
-## 5        2       2          K       0                                    
-## 6        6       2          K       0                                    
-##   LATITUDE LONGITUDE LATITUDE_E LONGITUDE_ REMARKS REFNUM
-## 1     3040      8812       3051       8806              1
-## 2     3042      8755          0          0              2
-## 3     3340      8742          0          0              3
-## 4     3458      8626          0          0              4
-## 5     3412      8642          0          0              5
-## 6     3450      8748          0          0              6
+data <- read.csv('data//repdata-data-StormData.csv.bz2')
 ```
 
 Now let's look at some of the column headings:
 
 ```r
-names(stormData)
+names(data)
 ```
 
 ```
@@ -102,18 +58,13 @@ names(stormData)
 ## [36] "REMARKS"    "REFNUM"
 ```
 
-In order to understand the health and economic impacts of the events, we'll need event information, location information and health and economic impact information.  Let's select only those columns from the dataset:
-
-In addition, NOA data goes back to 1950, but according to the assignment, most recent years should be considered more complete.  On the other hand, we want to be able to see long term effects of events as well.  Therefore, we will subset this data only to include events after 1980.  
-
-Lastly, we will do some processing of the data to make sure it's in the correct type for R.
+In order to understand the health and economic impacts of the events, we'll need event information, location information and health and economic impact information.  Let's select only those columns from the dataset.  We will also change the data types of several columns.
 
 
 ```r
-stormDataClean <- stormData %>%
-    select(
+stormData <- select(data,
+        REFNUM,
         BGN_DATE, # Date the event started
-        COUNTYNAME, # Name of the County
         STATE, # Abbreviation of the state
         EVTYPE, # Event type
         END_DATE, # END date
@@ -123,7 +74,102 @@ stormDataClean <- stormData %>%
         PROPDMGEXP, # Magnitude Number (K = thousands, M = Millions, etc)
         CROPDMG, # Crop Damage
         CROPDMGEXP # Magnitude Number (K = thousands, M = Millions, etc)
-    )
+    ) %>%
+    # Change the date columns into date objects.
+    mutate(BGN_DATE = mdy_hms(BGN_DATE), END_DATE = mdy_hms(END_DATE)) %>%
+    mutate(CROPDMGEXP = toupper(CROPDMGEXP), PROPDMGEXP = toupper(PROPDMGEXP))
 ```
 
+Since we want to make our analysis over different event types, we should explore the distribution of the event types first.  
+
+
+```r
+unique_events <- nrow(as.data.frame(unique(stormData$EVTYPE)))
+unique_events
+```
+
+```
+## [1] 985
+```
+
+We can see that there are 985 unique events in the data, while there are only 48 event types in [NATIONAL WEATHER SERVICE - INSTRUCTION 10-1605](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf)  
+
+In order to mitigate this, I've created a dataset containing the 48 Event Types.  Let's load that in now, and filter the storm data to include only the events containing one of the 48 official events.
+
+
+```r
+# Load in event types.
+evTypes <- read.csv('data/events.csv')
+# Make sure that all event types in stormData are upper case.
+stormData <- mutate(stormData, EVTYPE = toupper(EVTYPE))
+# Make sure that all event types in event types are upper case.
+evTypes <- mutate(evTypes, EVTYPE = toupper(EVTYPE))
+# Filter the stormData to include only events that match the 48.
+stormData <- semi_join(stormData, evTypes, by="EVTYPE")
+```
+
+NOA data goes back to 1950, but according to the assignment, most recent years should be considered more complete.  In addition, the [Storm Data DB Info Page](http://www.ncdc.noaa.gov/stormevents/details.jsp?type=eventtype) makes it clear that the full 48 events have only been collected since 1996.  Previously only tornado, or tornado, thunderstorm and hail data were collected. This would significantly skew our results, so we want to make sure to subset our data to include events starting January 1996.  This shouldn't be too bad because we still get a solid 8 years of data to analyze.
+
+
+```r
+stormData <- stormData %>%
+    filter(BGN_DATE > mdy("01/01/1996")) %>%
+    mutate(BGN_DATE = year(BGN_DATE), END_DATE = year(END_DATE))
+```
+
+The PROPDMG and PROPDMGEXP as well as CROPDMG and CROPDMGEXP are not comparable numbers, since the number in the PROPDMG column is multiplied by the letter of the PROPDMGEXP Column (same for CROPDMG).  Let's fix that.  In addition, since crop damage and property damage are both economic damages and are represented in dollars, we'll add them together.
+
+
+```r
+# Create function to change the letters to numerical multipliers.
+set_multiplier <- Vectorize(function(x) {
+    multiplier <- 0
+    if (x == "K")
+        multiplier <- 1000
+    if (x == "M")
+        multiplier <- 1000000
+    if (x == "B")
+        multiplier <- 1000000000
+    
+    multiplier
+})
+
+# Multiply the damage by its multiplier.
+stormData <- stormData %>%
+    mutate(PROPDMGEXP = set_multiplier(PROPDMGEXP)) %>%
+    mutate(CROPDMGEXP = set_multiplier(CROPDMGEXP)) %>%
+    mutate(PROPDMG = PROPDMG * PROPDMGEXP) %>%
+    mutate(CROPDMG = CROPDMG * CROPDMGEXP) %>%
+    mutate(TOTALDMG = CROPDMG + PROPDMG)
+```
+
+Let's also add together the fatalities injuries to get a total health impact of a storm:
+
+```r
+stormData <- mutate(stormData, TOTALHEALTHDMG = FATALITIES + INJURIES)
+```
+
+# Results
+## Across the United States, which types of events are most harmful with respect to population health?
+
+Since we classify direct injuries and fatalities as harmful to population health, let's see how various events affect these variables:
+
+
+```r
+g <- ggplot(
+    data = stormData, 
+    aes(x = BGN_DATE, y = TOTALDMG)
+) + 
+labs(
+    title = "Average Daily Activity Pattern",
+    x = "Interval",
+    y = "Num Steps"
+) + 
+geom_line() +
+facet_grid(EVTYPE ~ .)
+
+print(g)
+```
+
+![](repdata2_files/figure-html/unnamed-chunk-8-1.png) 
 
