@@ -10,19 +10,26 @@ Across the United States, which types of events have the greatest economic conse
 
 ```r
 # Auto Install Packages
-list.of.packages <- c("dplyr", "ggplot2", "knitr", "lubridate")
+list.of.packages <- c("dplyr", "ggplot2", "knitr", "lubridate", "tidyr")
 new.packages <- list.of.packages[!(list.of.packages %in% installed.packages()[,"Package"])]
 
 if(length(new.packages)) install.packages(new.packages)
 
 ## Bring in the libs.
 library(dplyr)
+library(tidyr)
 library(ggplot2)
 library(knitr)
 library(lubridate)
 
 ## Knitr setup for rounding:
 options(scipen = 1, digits = 1)
+
+print("SETUP")
+```
+
+```
+## [1] "SETUP"
 ```
 
 
@@ -62,7 +69,8 @@ In order to understand the health and economic impacts of the events, we'll need
 
 
 ```r
-stormData <- select(data,
+stormData <- select(
+        data,
         REFNUM,
         BGN_DATE, # Date the event started
         STATE, # Abbreviation of the state
@@ -117,7 +125,7 @@ stormData <- stormData %>%
     mutate(BGN_DATE = year(BGN_DATE), END_DATE = year(END_DATE))
 ```
 
-The PROPDMG and PROPDMGEXP as well as CROPDMG and CROPDMGEXP are not comparable numbers, since the number in the PROPDMG column is multiplied by the letter of the PROPDMGEXP Column (same for CROPDMG).  Let's fix that.  In addition, since crop damage and property damage are both economic damages and are represented in dollars, we'll add them together.
+The PROPDMG and PROPDMGEXP as well as CROPDMG and CROPDMGEXP are not comparable numbers, since the number in the PROPDMG column is multiplied by the letter of the PROPDMGEXP Column (same for CROPDMG).  Let's fix that. 
 
 
 ```r
@@ -140,36 +148,145 @@ stormData <- stormData %>%
     mutate(CROPDMGEXP = set_multiplier(CROPDMGEXP)) %>%
     mutate(PROPDMG = PROPDMG * PROPDMGEXP) %>%
     mutate(CROPDMG = CROPDMG * CROPDMGEXP) %>%
-    mutate(TOTALDMG = CROPDMG + PROPDMG)
+    # Let's put the damage into millions
+    mutate(CROPDMG = CROPDMG / 1000000) %>%
+    mutate(PROPDMG = PROPDMG / 1000000)
 ```
 
-Let's also add together the fatalities injuries to get a total health impact of a storm:
+In addition, to make our data fit the tidy data definition, let's condense the economic variables and the health variable to fit into two separate columns:
+
 
 ```r
-stormData <- mutate(stormData, TOTALHEALTHDMG = FATALITIES + INJURIES)
+stormData <- gather(stormData, HE, HE_INST, FATALITIES, INJURIES) %>%
+    gather(DMG, DMG_AMT, CROPDMG, PROPDMG)
+```
+
+Let's also do another select to get rid of the columns we no longer need:
+
+
+```r
+stormData <- select(stormData, -PROPDMGEXP, -CROPDMGEXP, -END_DATE)
+st <- sample_n(stormData, 10000)
 ```
 
 # Results
 ## Across the United States, which types of events are most harmful with respect to population health?
 
-Since we classify direct injuries and fatalities as harmful to population health, let's see how various events affect these variables:
+Since we classify direct injuries and fatalities as harmful to population health, let's examine these variables in relation to various events.  
+
+In order to get a clean picture, we will summarize the data and will exclude events that resulted in 0 injuries and 0 fatalities.
+
+
+Lastly, we will also set the y scale to one standard deviation above the mean for total of injuries + fatalities in order to be able to see the pattern more clearly.
 
 
 ```r
-g <- ggplot(
-    data = stormData, 
-    aes(x = BGN_DATE, y = TOTALDMG)
+he_data <- stormData
+
+he_data <- he_data %>%
+    group_by(BGN_DATE, EVTYPE, HE) %>%
+    summarise(H_IMP = sum(HE_INST)) %>%
+    filter(H_IMP > 0)
+
+yscale <- c(0, mean(he_data$H_IMP + sd(he_data$H_IMP)))
+
+he <- ggplot(
+    data = he_data,
+    aes(x = BGN_DATE, y = H_IMP, fill=HE)
 ) + 
 labs(
-    title = "Average Daily Activity Pattern",
-    x = "Interval",
-    y = "Num Steps"
+    title = "Injuries and Fatalities Per Event Per Year Since 1996",
+    x = "Event Type",
+    y = "Injury or Fatality Count"
 ) + 
-geom_line() +
-facet_grid(EVTYPE ~ .)
+geom_bar(stat = "identity", position="stack") + 
+scale_fill_discrete(name = "Health Effect") + 
+facet_wrap(~ EVTYPE, ncol = 4) +
+coord_cartesian(ylim = yscale)
 
-print(g)
+print(he)
 ```
 
-![](repdata2_files/figure-html/unnamed-chunk-8-1.png) 
+<img src="repdata2_files/figure-html/he-1.png" title="" alt="" style="display: block; margin: auto;" />
 
+
+## Across the United States, which types of events have the greatest economic consequences? 
+
+If we look at economic consequences as crop damages and property damages, we can use the data to analyze how much monetary damage each event causes.
+
+As we did above, we will remove any events that caused $0 in property damage and $0 in crop damage from the graph.
+
+Lastly, we will also set the y scale to one standard deviation above the mean for total economic damage in order to be able to see the pattern more clearly.
+
+
+
+```r
+# Todo data change.
+dmg_data <- stormData
+
+dmg_data <- dmg_data %>%
+    group_by(BGN_DATE, EVTYPE, DMG) %>%
+    summarise(DMG_TOT = sum(DMG_AMT)) %>%
+    filter(DMG_TOT > 0)
+
+yscale <- c(0, mean(dmg_data$DMG_TOT + sd(dmg_data$DMG_TOT)))
+
+dmg <- ggplot(
+    data = dmg_data,
+    aes(x = BGN_DATE, y = DMG_TOT, fill=DMG)
+) + 
+labs(
+    title = "Economic Impact Per Year Per Event Since 1996",
+    x = "Event Type",
+    y = "Dollars of Damage (Millions)"
+) + 
+geom_bar(stat = "identity", position="stack") + 
+scale_fill_discrete(name = "Economic Damage Type") + 
+facet_wrap(~ EVTYPE, ncol = 4) +
+coord_cartesian(ylim = yscale)
+
+print(dmg)
+```
+
+<img src="repdata2_files/figure-html/dmg-1.png" title="" alt="" style="display: block; margin: auto;" />
+
+## Exploring High Impact Events.
+From the figures above, we can see visually that there are some events that cause a lot more economic impact than others, and other events that cause a lot more health impact than others.  It could be interesting to see the economic and health impacts of events that are more significant in their impact than the rest.  Let's take a look:
+
+
+
+```r
+# Filter health data to include totals only above the mean.
+he_above_mean <- he_data %>%
+    filter(H_IMP > mean(H_IMP))
+
+# Filter economic impact data to include only totals above the mean.  Then Join the health impact data.
+
+both_above_mean <- dmg_data %>%
+    filter(DMG_TOT > mean(DMG_TOT)) %>%
+    inner_join(he_above_mean)
+```
+
+```
+## Joining by: c("BGN_DATE", "EVTYPE")
+```
+
+```r
+ovr <- ggplot(
+    data = both_above_mean,
+    aes(x = BGN_DATE)
+) + 
+labs(
+    title = "",
+    x = "",
+    y = "") + 
+geom_bar(stat = "identity", position="stack", aes(y=DMG_TOT, fill=DMG)) + 
+scale_fill_discrete(name = "Economic Damage Type") + 
+facet_wrap(~ EVTYPE, ncol = 4) +
+coord_cartesian(ylim = yscale)
+
+
+print(ovr)
+```
+
+<img src="repdata2_files/figure-html/ovr-1.png" title="" alt="" style="display: block; margin: auto;" />
