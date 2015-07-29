@@ -5,13 +5,19 @@ output:
     keep_md: yes
 ---
 
-Consider writing your report as if it were to be read by a government or municipal manager who might be responsible for preparing for severe weather events and will need to prioritize resources for different types of events.
 
-Across the United States, which types of events (as indicated in the EVTYPE variable) are most harmful with respect to population health?
+## Synopsis
+Storms and other severe weather events can cause various problems for communities and municipalities.  These problems tend to include economic issues such as property and crop damage, as well as public health issues, such as fatalities or injuries.  Being prepared for these situations is important and knowing which events are likely to cause the most of a certain type of damage is extremely important for preparation.
 
-Across the United States, which types of events have the greatest economic consequences?
+Our analysis allows us to identify different storm events and their impact on the economic and health metrics of communities.  Knowing this information will help responders be better prepared for these events.
 
-## Install and Load Libraries
+
+## Data Processing
+
+### Raw Data Source:
+The raw data source can be located [here](https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2).  
+
+### Install and Load Libraries
 ```{r setup, message=FALSE}
 # Auto Install Packages
 list.of.packages <- c("dplyr", "ggplot2", "knitr", "lubridate", "tidyr")
@@ -34,14 +40,7 @@ print("SETUP")
 ```
 
 
-## Synopsis
-Storms and other severe weather events can cause various problems for communities and municipalities.  These problems tend to include economic issues such as property and crop damage, as well as public health issues, such as fatalities or injuries.  Being prepared for these situations is important and knowing which events are likely to cause the most of a certain type of damage is extremely important for preparation.
-
-Our analysis allows us to identify different storm events and their impact on the economic and health metrics of communities.  Knowing this information will help responders be better prepared for these events.
-
-## Data Processing 
-
-We first read in the storm data from the raw CSV file included in the zip archive. 
+Next, we read in the storm data from the raw CSV file included in the zip archive. 
 
 ```{r readcsv, cache=TRUE}
 ## Results
@@ -84,7 +83,7 @@ unique_events
 
 We can see that there are `r unique_events` unique events in the data, while there are only 48 event types in [NATIONAL WEATHER SERVICE - INSTRUCTION 10-1605](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf)  
 
-In order to mitigate this, I've created a dataset containing the 48 Event Types.  Let's load that in now, and filter the storm data to include only the events containing one of the 48 official events.
+In order to mitigate this, I've created a dataset containing the 48 Event Types and made it available [here](http://mrm-random.s3.amazonaws.com/dz/events.csv). Let's load that in now, and filter the storm data to include only the events containing one of the 48 official events.
 
 ```{r}
 # Load in event types.
@@ -105,7 +104,7 @@ stormData <- stormData %>%
     mutate(BGN_DATE = year(BGN_DATE), END_DATE = year(END_DATE))
 ```
 
-The PROPDMG and PROPDMGEXP as well as CROPDMG and CROPDMGEXP are not comparable numbers, since the number in the PROPDMG column is multiplied by the letter of the PROPDMGEXP Column (same for CROPDMG).  Let's fix that. 
+The PROPDMG (property damage $) and PROPDMGEXP (property damage multiplier) as well as CROPDMG (crop damage $) and CROPDMGEXP (crop damage multipler) are not comparable numbers, since the number in the PROPDMG column is multiplied by the letter of the PROPDMGEXP Column (same for CROPDMG).  Let's fix that. 
 
 ```{r}
 # Create function to change the letters to numerical multipliers.
@@ -135,6 +134,7 @@ stormData <- stormData %>%
 In addition, to make our data fit the tidy data definition, let's condense the economic variables and the health variable to fit into two separate columns:
 
 ```{r}
+stormDataUt <- stormData
 stormData <- gather(stormData, HE, HE_INST, FATALITIES, INJURIES) %>%
     gather(DMG, DMG_AMT, CROPDMG, PROPDMG)
 ```
@@ -152,10 +152,9 @@ Since we classify direct injuries and fatalities as harmful to population health
 
 In order to get a clean picture, we will summarize the data and will exclude events that resulted in 0 injuries and 0 fatalities.
 
-
 Lastly, we will also set the y scale to one standard deviation above the mean for total of injuries + fatalities in order to be able to see the pattern more clearly.
 
-```{r he, fig.align='center'}
+```{r he, fig.width=10, fig.height=10, fig.align='center'}
 he_data <- stormData
 
 he_data <- he_data %>%
@@ -171,7 +170,7 @@ he <- ggplot(
 ) + 
 labs(
     title = "Injuries and Fatalities Per Event Per Year Since 1996",
-    x = "Event Type",
+    x = "Year",
     y = "Injury or Fatality Count"
 ) + 
 geom_bar(stat = "identity", position="stack") + 
@@ -182,6 +181,7 @@ coord_cartesian(ylim = yscale)
 print(he)
 ```
 
+We can see that Tornadoes, Excessive Heat, Lightning, Heat and Flash floods are some of the events that cause a higher level of negative impact to the health of the population.
 
 ## Across the United States, which types of events have the greatest economic consequences? 
 
@@ -192,7 +192,7 @@ As we did above, we will remove any events that caused $0 in property damage and
 Lastly, we will also set the y scale to one standard deviation above the mean for total economic damage in order to be able to see the pattern more clearly.
 
 
-```{r dmg,  fig.align='center'}
+```{r dmg,  fig.width=10, fig.height=10, fig.align='center'}
 # Todo data change.
 dmg_data <- stormData
 
@@ -209,8 +209,8 @@ dmg <- ggplot(
 ) + 
 labs(
     title = "Economic Impact Per Year Per Event Since 1996",
-    x = "Event Type",
-    y = "Dollars of Damage (Millions)"
+    x = "Year",
+    y = "Dollars of Damage (Billions)"
 ) + 
 geom_bar(stat = "identity", position="stack") + 
 scale_fill_discrete(name = "Economic Damage Type") + 
@@ -220,39 +220,34 @@ coord_cartesian(ylim = yscale)
 print(dmg)
 ```
 
-## Exploring High Impact Events.
-From the figures above, we can see visually that there are some events that cause a lot more economic impact than others, and other events that cause a lot more health impact than others.  It could be interesting to see the economic and health impacts of events that are more significant in their impact than the rest.  Let's take a look:
+We can see that droughts, floods, tornadoes and tropical storms are some of the events that bring the most economic damage to the communities in which they occur.
+
+## Exploring The Frequency of High Impact Events.
+From the figures above, we can see visually that there are some events that cause a lot more economic impact than others, and other events that cause a lot more health impact than others. It would be really interesting to know how often they happen.  Once again, we will set the top of the scale to one standard deviation above the mean to make the pattern more visible: 
 
 
-```{r ovr, fig.align='center'}
-
-# Filter health data to include totals only above the mean.
-he_above_mean <- he_data %>%
-    filter(H_IMP > mean(H_IMP))
-
-# Filter economic impact data to include only totals above the mean.  Then Join the health impact data.
-both_above_mean <- dmg_data %>%
-    filter(DMG_TOT > mean(DMG_TOT)) %>%
-    inner_join(he_above_mean)
+```{r ovr, fig.width=10, fig.height=10, fig.align='center'}
 
 
 
-yscale <- c(0, mean(both_above_mean$DMG_TOT + sd(both_above_mean$DMG_TOT)))
+ev_freq <- stormDataUt %>%
+    group_by(EVTYPE) %>%
+    count(EVTYPE) %>%
+    semi_join(he_data, by="EVTYPE") %>%
+    semi_join(dmg_data, by="EVTYPE") 
+
+yscale <- c(0, mean(ev_freq$n + sd(ev_freq$n)))
 
 ovr <- ggplot(
-    data = both_above_mean,
-    aes(x = BGN_DATE)
+    data = ev_freq,
+    aes(x = EVTYPE, y = n)
 ) + 
 labs(
-    title = "",
-    x = "",
-    y = "") + 
-geom_bar(stat = "identity", position="stack", aes(y=DMG_TOT, fill=DMG)) + 
-geom_bar(stat = "identity", position="stack", aes(y=H_IMP, fill=HE)) + 
-##scale_fill_discrete(name = "Economic Damage Type") + 
-facet_wrap(~ EVTYPE, ncol = 4) +
-coord_cartesian(ylim = yscale)
-
+    title = "Frequency of Storm Events Beginning in 1996",
+    x = "Event",
+    y = "Number of Occurences") + 
+geom_bar(stat = "identity") +
+coord_flip(ylim = yscale) 
 
 print(ovr)
 ```
